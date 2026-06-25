@@ -666,26 +666,10 @@ export default function App() {
     </Modal>
   );
 
-  const SearchModal = () => {
-    const res = query ? PRODUCTS.filter((p) => (p.name + p.farmer + p.village).toLowerCase().includes(query.toLowerCase())) : [];
-    return (
-      <Modal visible animationType="slide" onRequestClose={() => { setModal(null); setQuery(''); }}>
-        <SafeAreaView style={[s.fill, { backgroundColor: C.paper }]}>
-          <View style={[s.modalHeader, { alignItems: 'center' }]}>
-            <Pressable onPress={() => { setModal(null); setQuery(''); }}><Icon name="arrow-left" size={22} color={C.forest} /></Pressable>
-            <View style={[s.input, { flex: 1, marginLeft: 10, flexDirection: 'row', alignItems: 'center', paddingVertical: 8 }]}>
-              <Icon name="search" size={17} color={C.muted} />
-              <TextInput autoFocus value={query} onChangeText={setQuery} placeholder="Search produce, farmer, village..." placeholderTextColor={C.muted} style={{ flex: 1, marginLeft: 8, color: C.ink, fontSize: 14.5 }} />
-            </View>
-          </View>
-          <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
-            <View style={s.grid}>{res.map((p) => <Card key={p.id} p={p} />)}</View>
-            {query && res.length === 0 ? <Text style={{ color: C.muted, textAlign: 'center', marginTop: 30 }}>No matches for "{query}".</Text> : null}
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
-    );
-  };
+  // Search results — computed here so the search modal can be rendered
+  // INLINE (below). Rendering it as a nested component remounted the
+  // TextInput on every keystroke and dropped keyboard focus.
+  const searchRes = query ? PRODUCTS.filter((p) => (p.name + p.farmer + p.village).toLowerCase().includes(query.toLowerCase())) : [];
 
   const TABS = [['home', 'Home', 'home'], ['shop', 'Shop', 'grid'], ['cart', 'Basket', 'shopping-bag'], ['orders', 'Orders', 'package'], ['profile', 'Profile', 'user']];
 
@@ -721,7 +705,23 @@ export default function App() {
       {modal === 'success' && <SuccessModal />}
       {modal === 'orderDetail' && <OrderDetailModal />}
       {modal === 'address' && <AddressModal />}
-      {modal === 'search' && <SearchModal />}
+      {modal === 'search' && (
+        <Modal visible animationType="slide" onRequestClose={() => { setModal(null); setQuery(''); }}>
+          <SafeAreaView style={[s.fill, { backgroundColor: C.paper }]}>
+            <View style={[s.modalHeader, { alignItems: 'center' }]}>
+              <Pressable onPress={() => { setModal(null); setQuery(''); }}><Icon name="arrow-left" size={22} color={C.forest} /></Pressable>
+              <View style={[s.input, { flex: 1, marginLeft: 10, flexDirection: 'row', alignItems: 'center', paddingVertical: 8 }]}>
+                <Icon name="search" size={17} color={C.muted} />
+                <TextInput autoFocus value={query} onChangeText={setQuery} placeholder="Search produce, farmer, village..." placeholderTextColor={C.muted} style={{ flex: 1, marginLeft: 8, color: C.ink, fontSize: 14.5 }} />
+              </View>
+            </View>
+            <ScrollView contentContainerStyle={{ paddingBottom: 30 }} keyboardShouldPersistTaps="handled">
+              <View style={s.grid}>{searchRes.map((p) => <Card key={p.id} p={p} />)}</View>
+              {query && searchRes.length === 0 ? <Text style={{ color: C.muted, textAlign: 'center', marginTop: 30 }}>No matches for "{query}".</Text> : null}
+            </ScrollView>
+          </SafeAreaView>
+        </Modal>
+      )}
 
       {paying ? (
         <View style={s.payingOverlay}>
