@@ -35,7 +35,7 @@ export default function AdminPanel({ admin, onLogout }) {
   const currentMeta = MODULE_LIST.find((m) => m.key === active);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: A.bg }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: A.bg, width: '100%', maxWidth: 560, alignSelf: 'center', marginHorizontal: 'auto' }}>
       <StatusBar barStyle="light-content" />
 
       {/* top bar */}

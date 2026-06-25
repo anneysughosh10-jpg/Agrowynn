@@ -28,7 +28,7 @@ export default function AdminAuth({ onSuccess, onExit }) {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: A.bg }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: A.bg, width: '100%', maxWidth: 560, alignSelf: 'center', marginHorizontal: 'auto' }}>
       <StatusBar barStyle="light-content" />
       <View style={{ flex: 1, padding: 28, justifyContent: 'center' }}>
         <Pressable onPress={onExit} style={{ position: 'absolute', top: 44, left: 20, flexDirection: 'row', alignItems: 'center', gap: 6 }}>

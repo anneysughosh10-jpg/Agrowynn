@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, Image, Pressable, ScrollView, TextInput, Modal,
-  SafeAreaView, StatusBar, Dimensions, StyleSheet, Platform,
+  SafeAreaView, StatusBar, useWindowDimensions, StyleSheet, Platform,
 } from 'react-native';
+
+// On large screens (laptop/desktop web) the app is framed to a phone width
+// and centered; this is the max content width and the surrounding gutter color.
+const APP_MAX_W = 480;
 import { Feather } from '@expo/vector-icons';
 import { useStore, STATUS, update, nextId, getState, loadSessionSync, loadSessionAsync, saveSession } from './data/store';
 import AdminAuth from './admin/AdminAuth';
 import AdminPanel from './admin/AdminPanel';
 
 const LOGO = require('./assets/logo.png');
-const W = Dimensions.get('window').width;
 
 /* ---------------- brand ---------------- */
 const C = {
@@ -19,7 +22,6 @@ const C = {
   badge: '#E7EEDF', amberbg: '#FBEFD9', rose: '#C75D5D', white: '#FFFFFF',
 };
 const Icon = (p) => <Feather {...p} />;
-const cardW = (W - 16 * 2 - 12) / 2;
 
 /* ---- reusable presentational components (module scope so they keep a
    stable identity and don't remount on every App render) ---- */
@@ -40,7 +42,7 @@ const Row = ({ l, v, col }) => (
     <Text style={{ fontSize: 13, color: col || C.ink, fontWeight: col ? '700' : '400' }}>{v}</Text>
   </View>
 );
-const Card = ({ p, wide, cart, wish, add, dec, toggleWish, setSel, setModal }) => (
+const Card = ({ p, wide, cardW, cart, wish, add, dec, toggleWish, setSel, setModal }) => (
   <View style={[s.card, { width: wide ? 168 : cardW }]}>
     <Pressable onPress={() => { setSel(p); setModal('product'); }} style={s.cardImg}>
       {p.image ? <Image source={{ uri: p.image }} style={{ width: '100%', height: '100%', position: 'absolute' }} /> : <Text style={{ fontSize: 50 }}>{p.emoji}</Text>}
@@ -94,6 +96,16 @@ export default function App() {
   const today = new Date().toISOString().slice(0, 10);
   const activeCoupons = db.coupons.filter((c) => c.active && (!c.expiry || c.expiry >= today)); // don't offer expired coupons
   const enabledPays = PAYS.filter((p) => db.payments[p[0]]);
+
+  // Responsive: reacts to rotation AND browser resize (unlike a one-time
+  // Dimensions.get). On wide screens the content is capped to a phone frame.
+  const { width: winW } = useWindowDimensions();
+  const contentW = Math.min(winW, APP_MAX_W);
+  const cardW = (contentW - 16 * 2 - 12) / 2;
+  // maxWidth caps the flex-grown width (RN-web root is flex-row, so flex:1 would
+  // otherwise fill the screen); marginHorizontal auto centers it. Full-bleed on
+  // phones (width < cap), centered phone frame on laptops/desktops.
+  const frameStyle = { width: '100%', maxWidth: APP_MAX_W, alignSelf: 'center', marginHorizontal: 'auto' };
 
   const initialSession = loadSessionSync(); // web: restore now; native: null (async restore below)
   const hydratedRef = useRef(Platform.OS === 'web');
@@ -184,6 +196,14 @@ export default function App() {
     }).catch(() => { hydratedRef.current = true; });
   }, []);
 
+  // Web: paint the page background behind the centered phone frame so the
+  // gutters on laptop/desktop screens look intentional rather than blank.
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined' && document.body) {
+      document.body.style.backgroundColor = C.ink;
+    }
+  }, []);
+
   /* Customer login — validates against the Users list in the store and
      enforces the admin "blocked" flag. Unknown contacts auto-register. */
   const doVerify = () => {
@@ -231,7 +251,7 @@ export default function App() {
   };
 
   // Props every Card needs (module-scope Card no longer closes over App scope).
-  const cardProps = { cart, wish, add, dec, toggleWish, setSel, setModal };
+  const cardProps = { cardW, cart, wish, add, dec, toggleWish, setSel, setModal };
 
   /* ---------- hidden admin routes ---------- */
   if (screen === 'adminAuth') {
@@ -255,7 +275,7 @@ export default function App() {
   /* ---------- screens ---------- */
   if (screen === 'splash') {
     return (
-      <SafeAreaView style={[s.fill, { backgroundColor: C.paper, alignItems: 'center', justifyContent: 'center', padding: 32 }]}>
+      <SafeAreaView style={[s.fill, frameStyle, { backgroundColor: C.paper, alignItems: 'center', justifyContent: 'center', padding: 32 }]}>
         <StatusBar barStyle="dark-content" />
         <Pressable onPress={onLogoTap}>
           <Image source={splashLogo} style={{ width: 230, height: 230, resizeMode: 'contain' }} />
@@ -274,7 +294,7 @@ export default function App() {
   if (screen === 'auth') {
     const ok = authMode === 'phone' ? cred.phone.length === 10 : cred.email.includes('@');
     return (
-      <SafeAreaView style={[s.fill, { backgroundColor: C.paper, padding: 28, justifyContent: 'center' }]}>
+      <SafeAreaView style={[s.fill, frameStyle, { backgroundColor: C.paper, padding: 28, justifyContent: 'center' }]}>
         <StatusBar barStyle="dark-content" />
         <View style={{ alignItems: 'center', marginBottom: 24 }}>
           <Image source={LOGO} style={{ width: 120, height: 120, resizeMode: 'contain' }} />
@@ -317,7 +337,7 @@ export default function App() {
 
   if (screen === 'location') {
     return (
-      <SafeAreaView style={[s.fill, { backgroundColor: C.paper, padding: 28, justifyContent: 'center' }]}>
+      <SafeAreaView style={[s.fill, frameStyle, { backgroundColor: C.paper, padding: 28, justifyContent: 'center' }]}>
         <StatusBar barStyle="dark-content" />
         <Icon name="map-pin" size={38} color={C.leaf} />
         <Text style={[s.h1, { marginTop: 14 }]}>Where should we deliver?</Text>
@@ -550,7 +570,7 @@ export default function App() {
     const farmer = db.farmers.find((f) => f.name === p.farmer);
     return (
       <Modal visible animationType="slide" onRequestClose={() => setModal(null)}>
-        <SafeAreaView style={[s.fill, { backgroundColor: C.paper }]}>
+        <SafeAreaView style={[s.fill, frameStyle, { backgroundColor: C.paper }]}>
           <View style={s.prodImg}>
             {p.image ? <Image source={{ uri: p.image }} style={{ width: '100%', height: '100%', position: 'absolute' }} /> : <Text style={{ fontSize: 110 }}>{p.emoji}</Text>}
             <Pressable onPress={() => setModal(null)} style={[s.circBtn, { left: 14 }]}><Icon name="arrow-left" size={19} color={C.forest} /></Pressable>
@@ -600,7 +620,7 @@ export default function App() {
 
   const CheckoutModal = () => (
     <Modal visible animationType="slide" onRequestClose={() => setModal(null)}>
-      <SafeAreaView style={[s.fill, { backgroundColor: C.paper }]}>
+      <SafeAreaView style={[s.fill, frameStyle, { backgroundColor: C.paper }]}>
         <View style={s.modalHeader}>
           <Pressable onPress={() => setModal(null)}><Icon name="arrow-left" size={22} color={C.forest} /></Pressable>
           <Text style={[s.h1, { fontSize: 19, marginLeft: 10 }]}>Checkout</Text>
@@ -642,7 +662,7 @@ export default function App() {
     const o = db.orders.find((x) => x.id === lastOrderId);
     return (
       <Modal visible animationType="slide" onRequestClose={() => { setModal(null); setTab('orders'); }}>
-        <SafeAreaView style={[s.fill, { backgroundColor: C.paper, alignItems: 'center', justifyContent: 'center', padding: 36 }]}>
+        <SafeAreaView style={[s.fill, frameStyle, { backgroundColor: C.paper, alignItems: 'center', justifyContent: 'center', padding: 36 }]}>
           <View style={s.successCirc}><Icon name="check" size={44} color={C.forest} /></View>
           <Text style={[s.h1, { fontSize: 24, marginTop: 18 }]}>Order placed!</Text>
           <Text style={{ color: C.muted, fontSize: 14, marginTop: 6, textAlign: 'center', lineHeight: 21 }}>Your fresh produce is confirmed. We'll pack it at the farm and deliver in your slot.</Text>
@@ -667,7 +687,7 @@ export default function App() {
     const cancelled = o.status === -1;
     return (
       <Modal visible animationType="slide" onRequestClose={() => { setModal(null); setTab('orders'); }}>
-        <SafeAreaView style={[s.fill, { backgroundColor: C.paper }]}>
+        <SafeAreaView style={[s.fill, frameStyle, { backgroundColor: C.paper }]}>
           <View style={s.modalHeader}>
             <Pressable onPress={() => { setModal(null); setTab('orders'); }}><Icon name="arrow-left" size={22} color={C.forest} /></Pressable>
             <Text style={[s.h1, { fontSize: 19, marginLeft: 10 }]}>Order #{o.id}</Text>
@@ -737,7 +757,7 @@ export default function App() {
   const TABS = [['home', 'Home', 'home'], ['shop', 'Shop', 'grid'], ['cart', 'Basket', 'shopping-bag'], ['orders', 'Orders', 'package'], ['profile', 'Profile', 'user']];
 
   return (
-    <SafeAreaView style={[s.fill, { backgroundColor: C.paper }]}>
+    <SafeAreaView style={[s.fill, frameStyle, { backgroundColor: C.paper }]}>
       <StatusBar barStyle={tab === 'home' || tab === 'profile' ? 'light-content' : 'dark-content'} />
       {settings.maintenance ? (
         <View style={{ backgroundColor: C.harvest, paddingVertical: 8, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -772,7 +792,7 @@ export default function App() {
       {modal === 'address' && AddressModal()}
       {modal === 'search' && (
         <Modal visible animationType="slide" onRequestClose={() => { setModal(null); setQuery(''); }}>
-          <SafeAreaView style={[s.fill, { backgroundColor: C.paper }]}>
+          <SafeAreaView style={[s.fill, frameStyle, { backgroundColor: C.paper }]}>
             <View style={[s.modalHeader, { alignItems: 'center' }]}>
               <Pressable onPress={() => { setModal(null); setQuery(''); }}><Icon name="arrow-left" size={22} color={C.forest} /></Pressable>
               <View style={[s.input, { flex: 1, marginLeft: 10, flexDirection: 'row', alignItems: 'center', paddingVertical: 8 }]}>
@@ -804,6 +824,7 @@ const shadow = Platform.select({
 });
 const s = StyleSheet.create({
   fill: { flex: 1 },
+
   h1: { fontSize: 22, fontWeight: '800', color: C.forest },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   btn: { backgroundColor: C.forest, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
@@ -851,7 +872,7 @@ const s = StyleSheet.create({
   okCard: { backgroundColor: C.card, borderWidth: 1, borderColor: C.line, borderRadius: 14, padding: 14, marginTop: 16, width: '100%' },
   statusDot: { width: 22, height: 22, borderRadius: 999, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   sheetBackdrop: { flex: 1, backgroundColor: 'rgba(20,30,22,0.45)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: C.paper, borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 20 },
+  sheet: { backgroundColor: C.paper, borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 20, width: '100%', maxWidth: APP_MAX_W, alignSelf: 'center', marginHorizontal: 'auto' },
   nav: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', height: 74, paddingBottom: 12, backgroundColor: C.card, borderTopWidth: 1, borderTopColor: C.line },
   navBadge: { position: 'absolute', top: -5, right: -10, minWidth: 17, height: 17, borderRadius: 999, backgroundColor: C.harvest, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   payingOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(20,30,22,0.6)', alignItems: 'center', justifyContent: 'center' },

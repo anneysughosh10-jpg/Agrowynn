@@ -310,7 +310,7 @@ const st = StyleSheet.create({
   toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
   chip: { borderWidth: 1, borderColor: A.line, backgroundColor: A.chipBg, borderRadius: 999, paddingHorizontal: 13, paddingVertical: 8 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: A.panel, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 18, borderWidth: 1, borderColor: A.line },
+  sheet: { backgroundColor: A.panel, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 18, borderWidth: 1, borderColor: A.line, width: '100%', maxWidth: 560, alignSelf: 'center', marginHorizontal: 'auto' },
   sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
   sheetTitle: { color: A.ink, fontSize: 18, fontWeight: '800' },
   stat: { backgroundColor: A.card, borderWidth: 1, borderColor: A.line, borderRadius: 16, padding: 14, minWidth: 150 },
