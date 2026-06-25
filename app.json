@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "Agrowynn",
+    "slug": "agrowynn",
+    "owner": "sughoshanney",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "scheme": "agrowynn",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#EEF0E4"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.agrowynn.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      },
+      "package": "com.agrowynn.app",
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Agrowynn needs access to your photos so admins can upload product and farmer images."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "d6681816-a74b-4841-bdaa-0753cf3230f4"
+      }
+    }
+  }
+}
