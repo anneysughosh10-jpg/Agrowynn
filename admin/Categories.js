@@ -5,7 +5,7 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { A, AIcon, Screen, Btn, IconBtn, Card, Tag, Empty, Input, FormModal, useConfirm } from './ui';
-import { useStore, update, logActivity } from '../data/store';
+import { useStore, update, logActivity, uniqueId } from '../data/store';
 
 const blank = { name: '', emoji: '🍎', hidden: false };
 
@@ -22,7 +22,7 @@ export default function Categories({ admin }) {
   const save = () => {
     if (!form.name.trim()) return;
     if (editing === 'new') {
-      const id = form.name.trim().toLowerCase().replace(/\s+/g, '-').slice(0, 16) + '-' + (categories.length + 1);
+      const id = uniqueId(categories, form.name.trim().toLowerCase().replace(/\s+/g, '-').slice(0, 16));
       update('categories', (arr) => [...arr, { id, name: form.name.trim(), emoji: form.emoji || '🍎', hidden: false }]);
       logActivity(admin.name, `Added category "${form.name.trim()}"`);
     } else {
@@ -34,7 +34,12 @@ export default function Categories({ admin }) {
 
   const del = (c) => {
     const n = products.filter((p) => p.cat === c.id).length;
-    confirm(n ? `"${c.name}" has ${n} product(s). Delete anyway?` : `Delete "${c.name}"?`, () => {
+    confirm(n ? `"${c.name}" has ${n} product(s). They'll move to another category. Delete?` : `Delete "${c.name}"?`, () => {
+      // Reassign orphaned products to a surviving category so they don't vanish.
+      const survivor = categories.find((x) => x.id !== c.id);
+      if (n && survivor) {
+        update('products', (arr) => arr.map((p) => (p.cat === c.id ? { ...p, cat: survivor.id } : p)));
+      }
       update('categories', (arr) => arr.filter((x) => x.id !== c.id));
       logActivity(admin.name, `Deleted category "${c.name}"`);
     });

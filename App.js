@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, Image, Pressable, ScrollView, TextInput, Modal,
   SafeAreaView, StatusBar, Dimensions, StyleSheet, Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { useStore, STATUS, update, nextId, getState } from './data/store';
+import { useStore, STATUS, update, nextId, getState, loadSessionSync, loadSessionAsync, saveSession } from './data/store';
 import AdminAuth from './admin/AdminAuth';
 import AdminPanel from './admin/AdminPanel';
 
@@ -38,23 +38,25 @@ export default function App() {
   const activeCoupons = db.coupons.filter((c) => c.active);
   const enabledPays = PAYS.filter((p) => db.payments[p[0]]);
 
-  const [screen, setScreen] = useState('splash');
+  const initialSession = loadSessionSync(); // web: restore now; native: null (async restore below)
+  const hydratedRef = useRef(Platform.OS === 'web');
+  const [screen, setScreen] = useState(initialSession && initialSession.user ? 'app' : 'splash');
   const [adminUser, setAdminUser] = useState(null);
   const [logoTaps, setLogoTaps] = useState(0);
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(initialSession && initialSession.user ? initialSession.user : null);
   const [authMode, setAuthMode] = useState('phone');
   const [authStep, setAuthStep] = useState('enter');
   const [cred, setCred] = useState({ phone: '', email: '' });
   const [otp, setOtp] = useState('');
   const [authError, setAuthError] = useState('');
-  const [address, setAddress] = useState('Gachibowli, Hyderabad');
+  const [address, setAddress] = useState(initialSession && initialSession.address ? initialSession.address : 'Gachibowli, Hyderabad');
   const [tab, setTab] = useState('home');
   const [modal, setModal] = useState(null);
   const [sel, setSel] = useState(null);
   const [selOrder, setSelOrder] = useState(null);
-  const [cart, setCart] = useState({});
-  const [wish, setWish] = useState([]);
-  const [orders, setOrders] = useState([]);
+  const [cart, setCart] = useState(initialSession && initialSession.cart ? initialSession.cart : {});
+  const [wish, setWish] = useState(initialSession && initialSession.wish ? initialSession.wish : []);
+  const [lastOrderId, setLastOrderId] = useState(null);
   const [shopCat, setShopCat] = useState('veg');
   const [query, setQuery] = useState('');
   const [coupon, setCoupon] = useState(null);
@@ -64,12 +66,15 @@ export default function App() {
 
   const add = (id) => setCart((p) => ({ ...p, [id]: (p[id] || 0) + 1 }));
   const dec = (id) => setCart((p) => { const n = { ...p }; if (!n[id]) return n; n[id]--; if (n[id] <= 0) delete n[id]; return n; });
-  const count = Object.values(cart).reduce((a, b) => a + b, 0);
-  // Resolve cart ids to products; skip any that an admin has since deleted
-  // (otherwise the spread would yield a priceless line and break the total).
+  // Resolve cart ids to products; skip any an admin has since deleted, so the
+  // total never breaks and the badge never counts items that aren't shown.
   const lines = Object.keys(cart)
     .map((id) => { const prod = PRODUCTS.find((x) => x.id === +id); return prod ? { ...prod, q: cart[id] } : null; })
     .filter(Boolean);
+  const count = lines.reduce((a, b) => a + b.q, 0);
+  const cartHasOOS = lines.some((l) => l.inStock === false);
+  const myUserId = user && user.id ? user.id : 0;
+  const myOrders = db.orders.filter((o) => o.userId === myUserId);
   const itemTotal = lines.reduce((a, b) => a + b.price * b.q, 0);
   const mrpTotal = lines.reduce((a, b) => a + b.mrp * b.q, 0);
   const saving = mrpTotal - itemTotal;
@@ -78,8 +83,9 @@ export default function App() {
   const couponObj = activeCoupons.find((c) => c.code === coupon);
   if (couponObj && itemTotal >= (couponObj.minOrder || 0)) {
     cOff = couponObj.type === 'percent'
-      ? Math.min(itemTotal * couponObj.value / 100, couponObj.cap || Infinity)
+      ? Math.min(itemTotal * couponObj.value / 100, couponObj.cap > 0 ? couponObj.cap : Infinity) // cap 0 means "no cap"
       : couponObj.value;
+    cOff = Math.min(cOff, itemTotal); // never discount more than the items cost
   }
   const payable = Math.max(0, itemTotal + delivery - cOff);
   const toggleWish = (id) => setWish((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
@@ -91,6 +97,35 @@ export default function App() {
       setPayMethod(enabledPays[0][0]);
     }
   }, [enabledPays, payMethod]);
+
+  // Keep the selected delivery slot valid if an admin removes/renames slots.
+  useEffect(() => {
+    if (SLOTS.length && !SLOTS.includes(slot)) setSlot(SLOTS[0]);
+  }, [SLOTS, slot]);
+
+  // Reset the shop category if an admin hides or deletes the selected one.
+  useEffect(() => {
+    if (CATEGORIES.length && !CATEGORIES.some((c) => c.id === shopCat)) setShopCat(CATEGORIES[0].id);
+  }, [CATEGORIES, shopCat]);
+
+  // Persist the customer session (login, cart, wishlist, address) across restarts.
+  useEffect(() => {
+    if (hydratedRef.current) saveSession({ user, cart, wish, address });
+  }, [user, cart, wish, address]);
+
+  // Native: restore the saved session asynchronously after first paint.
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    loadSessionAsync().then((sdata) => {
+      if (sdata) {
+        if (sdata.cart) setCart(sdata.cart);
+        if (sdata.wish) setWish(sdata.wish);
+        if (sdata.address) setAddress(sdata.address);
+        if (sdata.user) { setUser(sdata.user); setScreen('app'); }
+      }
+      hydratedRef.current = true;
+    }).catch(() => { hydratedRef.current = true; });
+  }, []);
 
   /* Customer login — validates against the Users list in the store and
      enforces the admin "blocked" flag. Unknown contacts auto-register. */
@@ -118,17 +153,19 @@ export default function App() {
     if (settings.maintenance) return; // ordering paused
     setPaying(true);
     setTimeout(() => {
+      // Re-check live state in case the store changed during the payment delay.
+      if (getState().settings.maintenance) { setPaying(false); return; }
       const id = 'AGW' + Math.floor(100000 + Math.random() * 900000);
-      const order = { id, lines, payable, slot, status: 0 };
-      setOrders((p) => [order, ...p]);
-      // also record into the central store so the admin panel sees it
+      // Single source of truth: the order lives in the store so the admin
+      // panel AND the customer's "My orders" both read the same record.
       const storeOrder = {
-        id, userId: user && user.id ? user.id : 0,
+        id, userId: myUserId,
         userName: user && user.name ? user.name : 'Guest',
         lines: lines.map((l) => ({ id: l.id, name: l.name, emoji: l.emoji, farmer: l.farmer, village: l.village, price: l.price, q: l.q })),
         payable, slot, status: 0, pay: payMethod, date: 'today',
       };
       update('orders', (arr) => [storeOrder, ...arr]);
+      setLastOrderId(id);
       setPaying(false); setCart({}); setCoupon(null); setModal('success');
     }, 1600);
   };
@@ -366,7 +403,7 @@ export default function App() {
           <>
             {delivery > 0 ? (
               <View style={[s.offer, { marginTop: 0 }]}>
-                <Text style={{ color: C.ink, fontSize: 12.5 }}>Add ₹{settings.freeDeliveryThreshold - itemTotal} more for free delivery</Text>
+                <Text style={{ color: C.ink, fontSize: 12.5 }}>Add ₹{Math.max(0, Math.round(settings.freeDeliveryThreshold - itemTotal))} more for free delivery</Text>
               </View>
             ) : null}
             <View style={{ paddingHorizontal: 16, marginTop: 12 }}>
@@ -376,6 +413,7 @@ export default function App() {
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontWeight: '700', color: C.ink, fontSize: 14 }}>{it.name}</Text>
                     <Text style={{ fontSize: 11, color: C.muted }}>{it.farmer} · {it.unit}</Text>
+                    {it.inStock === false ? <Text style={{ fontSize: 10.5, color: C.rose, fontWeight: '700', marginTop: 1 }}>Out of stock</Text> : null}
                     <Text style={{ color: C.forest, fontWeight: '700', marginTop: 2 }}>₹{it.price * it.q}</Text>
                   </View>
                   <View style={s.stepper}>
@@ -400,9 +438,9 @@ export default function App() {
             <View style={s.bill}>
               <Text style={{ fontWeight: '700', color: C.ink, marginBottom: 8 }}>Bill summary</Text>
               <Row l="Item total" v={'₹' + itemTotal} />
-              <Row l="Farm savings" v={'- ₹' + saving} col={C.leaf} />
+              {saving > 0 ? <Row l="Farm savings" v={'- ₹' + saving} col={C.leaf} /> : null}
               <Row l="Delivery" v={delivery ? '₹' + delivery : 'FREE'} col={delivery ? C.ink : C.leaf} />
-              {coupon ? <Row l={'Coupon (' + coupon + ')'} v={'- ₹' + Math.round(cOff)} col={C.leaf} /> : null}
+              {cOff > 0 ? <Row l={'Coupon (' + coupon + ')'} v={'- ₹' + Math.round(cOff)} col={C.leaf} /> : null}
               <View style={[s.rowBetween, { borderTopWidth: 1, borderTopColor: C.line, paddingTop: 8, marginTop: 3 }]}>
                 <Text style={{ fontWeight: '700', color: C.ink }}>To pay</Text>
                 <Text style={{ fontWeight: '800', color: C.forest, fontSize: 18 }}>₹{Math.round(payable)}</Text>
@@ -418,6 +456,10 @@ export default function App() {
               <Icon name="tool" size={16} color="#fff" />
               <Text style={s.btnTxt}>Ordering paused — maintenance</Text>
             </View>
+          ) : cartHasOOS ? (
+            <View style={[s.btn, { backgroundColor: C.muted }]}>
+              <Text style={s.btnTxt}>Remove out-of-stock items to checkout</Text>
+            </View>
           ) : (
             <Btn label={'Proceed to checkout · ₹' + Math.round(payable)} onPress={() => setModal('checkout')} />
           )}
@@ -429,16 +471,16 @@ export default function App() {
   const Orders = () => (
     <ScrollView style={s.fill} contentContainerStyle={{ paddingBottom: 90 }}>
       <Text style={[s.h1, { padding: 16 }]}>Your orders</Text>
-      {orders.length === 0 ? (
+      {myOrders.length === 0 ? (
         <View style={{ alignItems: 'center', marginTop: 80 }}>
           <Icon name="package" size={44} color={C.muted} />
           <Text style={{ color: C.ink, fontWeight: '700', marginTop: 14 }}>No orders yet</Text>
         </View>
-      ) : orders.map((o) => (
+      ) : myOrders.map((o) => (
         <Pressable key={o.id} onPress={() => { setSelOrder(o); setModal('orderDetail'); }} style={s.orderCard}>
           <View style={s.rowBetween}>
             <Text style={{ fontWeight: '700', color: C.ink }}>#{o.id}</Text>
-            <Pill t={STATUS[o.status]} />
+            <Pill t={o.status === -1 ? 'Cancelled' : STATUS[o.status]} bg={o.status === -1 ? '#F3D9D9' : undefined} col={o.status === -1 ? C.rose : undefined} />
           </View>
           <View style={[s.rowBetween, { marginTop: 8 }]}>
             <Text style={{ fontSize: 20 }}>{o.lines.slice(0, 4).map((l) => l.emoji).join(' ')}</Text>
@@ -475,7 +517,7 @@ export default function App() {
         <View style={s.pGroup}>
           <PRow icon="credit-card" label="Payment methods" onPress={() => { }} />
           <PRow icon="phone" label="Help & support" onPress={() => { }} />
-          <PRow icon="log-out" label="Log out" danger onPress={() => { setScreen('splash'); setAuthStep('enter'); setUser(null); setCart({}); setTab('home'); setModal(null); }} />
+          <PRow icon="log-out" label="Log out" danger onPress={() => { setScreen('splash'); setAuthStep('enter'); setUser(null); setCart({}); setWish([]); setCoupon(null); setSelOrder(null); setLastOrderId(null); setCred({ phone: '', email: '' }); setOtp(''); setTab('home'); setModal(null); }} />
         </View>
         <View style={{ alignItems: 'center', marginVertical: 20 }}>
           <Image source={LOGO} style={{ width: 60, height: 60, resizeMode: 'contain' }} />
@@ -513,7 +555,7 @@ export default function App() {
             <Text style={{ marginTop: 2, color: C.forest, fontSize: 20, fontWeight: '800' }}>₹{p.price} <Text style={{ color: C.muted, fontSize: 13, fontWeight: '400' }}>· {p.unit}</Text></Text>
             <View style={s.farmerCard}>
               <View style={[s.farmerAv, { overflow: 'hidden' }]}>
-                {farmer && farmer.photo ? <Image source={{ uri: farmer.photo }} style={{ width: 46, height: 46 }} /> : <Text style={{ color: C.forest, fontWeight: '800', fontSize: 18 }}>{p.farmer[0]}</Text>}
+                {farmer && farmer.photo ? <Image source={{ uri: farmer.photo }} style={{ width: 46, height: 46 }} /> : <Text style={{ color: C.forest, fontWeight: '800', fontSize: 18 }}>{(p.farmer || '?')[0]}</Text>}
               </View>
               <View style={{ flex: 1, marginLeft: 12 }}>
                 <Text style={{ fontSize: 10.5, color: C.muted, fontWeight: '700' }}>GROWN BY</Text>
@@ -523,7 +565,7 @@ export default function App() {
             </View>
             {farmer && farmer.farmPhoto ? (
               <View style={{ marginTop: 14 }}>
-                <Text style={{ fontSize: 10.5, color: C.muted, fontWeight: '700', marginBottom: 6 }}>FROM {p.farmer.toUpperCase()}'S FARM</Text>
+                <Text style={{ fontSize: 10.5, color: C.muted, fontWeight: '700', marginBottom: 6 }}>FROM {(p.farmer || 'THE').toUpperCase()}'S FARM</Text>
                 <Image source={{ uri: farmer.farmPhoto }} style={{ width: '100%', height: 170, borderRadius: 16 }} />
               </View>
             ) : null}
@@ -587,7 +629,7 @@ export default function App() {
   );
 
   const SuccessModal = () => {
-    const o = orders[0];
+    const o = db.orders.find((x) => x.id === lastOrderId);
     return (
       <Modal visible animationType="slide" onRequestClose={() => { setModal(null); setTab('orders'); }}>
         <SafeAreaView style={[s.fill, { backgroundColor: C.paper, alignItems: 'center', justifyContent: 'center', padding: 36 }]}>
@@ -609,25 +651,36 @@ export default function App() {
   };
 
   const OrderDetailModal = () => {
-    const o = selOrder; if (!o) return null;
+    if (!selOrder) return null;
+    // Read the live order from the store so admin status changes show here.
+    const o = db.orders.find((x) => x.id === selOrder.id) || selOrder;
+    const cancelled = o.status === -1;
     return (
-      <Modal visible animationType="slide" onRequestClose={() => setModal(orders.length && o === orders[0] ? null : null)}>
+      <Modal visible animationType="slide" onRequestClose={() => { setModal(null); setTab('orders'); }}>
         <SafeAreaView style={[s.fill, { backgroundColor: C.paper }]}>
           <View style={s.modalHeader}>
             <Pressable onPress={() => { setModal(null); setTab('orders'); }}><Icon name="arrow-left" size={22} color={C.forest} /></Pressable>
             <Text style={[s.h1, { fontSize: 19, marginLeft: 10 }]}>Order #{o.id}</Text>
           </View>
           <ScrollView style={{ flex: 1, paddingHorizontal: 20, paddingTop: 16 }}>
-            <Text style={{ fontWeight: '700', color: C.ink, marginBottom: 12 }}>Delivery status</Text>
-            {STATUS.map((st, i) => (
-              <View key={st} style={{ flexDirection: 'row' }}>
-                <View style={{ alignItems: 'center' }}>
-                  <View style={[s.statusDot, { backgroundColor: i <= o.status ? C.forest : '#fff', borderColor: i <= o.status ? C.forest : C.line }]}>{i <= o.status ? <Icon name="check" size={12} color="#fff" /> : null}</View>
-                  {i < 3 ? <View style={{ width: 2, height: 28, backgroundColor: i < o.status ? C.forest : C.line }} /> : null}
-                </View>
-                <Text style={{ marginLeft: 12, color: i <= o.status ? C.ink : C.muted, fontWeight: '600', fontSize: 14 }}>{st}</Text>
+            {cancelled ? (
+              <View style={{ backgroundColor: '#F3D9D9', borderRadius: 12, padding: 14, marginBottom: 16 }}>
+                <Text style={{ color: C.rose, fontWeight: '700' }}>This order was cancelled · refund pending.</Text>
               </View>
-            ))}
+            ) : (
+              <>
+                <Text style={{ fontWeight: '700', color: C.ink, marginBottom: 12 }}>Delivery status</Text>
+                {STATUS.map((st, i) => (
+                  <View key={st} style={{ flexDirection: 'row' }}>
+                    <View style={{ alignItems: 'center' }}>
+                      <View style={[s.statusDot, { backgroundColor: i <= o.status ? C.forest : '#fff', borderColor: i <= o.status ? C.forest : C.line }]}>{i <= o.status ? <Icon name="check" size={12} color="#fff" /> : null}</View>
+                      {i < 3 ? <View style={{ width: 2, height: 28, backgroundColor: i < o.status ? C.forest : C.line }} /> : null}
+                    </View>
+                    <Text style={{ marginLeft: 12, color: i <= o.status ? C.ink : C.muted, fontWeight: '600', fontSize: 14 }}>{st}</Text>
+                  </View>
+                ))}
+              </>
+            )}
             <Text style={{ fontWeight: '700', color: C.ink, marginTop: 20, marginBottom: 10 }}>Items</Text>
             {o.lines.map((it) => (
               <View key={it.id} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
@@ -657,7 +710,7 @@ export default function App() {
             {AREAS.map((a) => (
               <Pressable key={a} onPress={() => { setAddress(a + ', Hyderabad'); setModal(null); }} style={s.areaRow}>
                 <Text style={{ color: C.ink, fontSize: 14 }}>📍 {a}, Hyderabad</Text>
-                {address.indexOf(a) === 0 ? <Icon name="check" size={17} color={C.leaf} /> : null}
+                {address === a + ', Hyderabad' ? <Icon name="check" size={17} color={C.leaf} /> : null}
               </Pressable>
             ))}
           </ScrollView>
@@ -669,7 +722,7 @@ export default function App() {
   // Search results — computed here so the search modal can be rendered
   // INLINE (below). Rendering it as a nested component remounted the
   // TextInput on every keystroke and dropped keyboard focus.
-  const searchRes = query ? PRODUCTS.filter((p) => (p.name + p.farmer + p.village).toLowerCase().includes(query.toLowerCase())) : [];
+  const searchRes = query ? PRODUCTS.filter((p) => ((p.name || '') + (p.farmer || '') + (p.village || '')).toLowerCase().includes(query.toLowerCase())) : [];
 
   const TABS = [['home', 'Home', 'home'], ['shop', 'Shop', 'grid'], ['cart', 'Basket', 'shopping-bag'], ['orders', 'Orders', 'package'], ['profile', 'Profile', 'user']];
 
@@ -683,11 +736,13 @@ export default function App() {
         </View>
       ) : null}
       <View style={{ flex: 1 }}>
-        {tab === 'home' && <Home />}
-        {tab === 'shop' && <Shop />}
-        {tab === 'cart' && <Cart />}
-        {tab === 'orders' && <Orders />}
-        {tab === 'profile' && <Profile />}
+        {/* Called as functions (not <Home/>) so they're inlined into App's tree
+            and NOT remounted on every render — preserves scroll/input focus. */}
+        {tab === 'home' && Home()}
+        {tab === 'shop' && Shop()}
+        {tab === 'cart' && Cart()}
+        {tab === 'orders' && Orders()}
+        {tab === 'profile' && Profile()}
       </View>
 
       <View style={s.nav}>
@@ -700,11 +755,11 @@ export default function App() {
         ))}
       </View>
 
-      {modal === 'product' && <ProductModal />}
-      {modal === 'checkout' && <CheckoutModal />}
-      {modal === 'success' && <SuccessModal />}
-      {modal === 'orderDetail' && <OrderDetailModal />}
-      {modal === 'address' && <AddressModal />}
+      {modal === 'product' && ProductModal()}
+      {modal === 'checkout' && CheckoutModal()}
+      {modal === 'success' && SuccessModal()}
+      {modal === 'orderDetail' && OrderDetailModal()}
+      {modal === 'address' && AddressModal()}
       {modal === 'search' && (
         <Modal visible animationType="slide" onRequestClose={() => { setModal(null); setQuery(''); }}>
           <SafeAreaView style={[s.fill, { backgroundColor: C.paper }]}>

@@ -92,8 +92,8 @@ const seed = () => ({
     o('AGW100003', 3, 'Sneha Rao', [{ id: 9, name: 'Foxtail Millet', emoji: '🌾', farmer: 'Ramulu', village: 'Zaheerabad', price: 110, q: 1 }, { id: 8, name: 'Pomegranate', emoji: '🔴', farmer: 'Venkatesh', village: 'Moinabad', price: 140, q: 1 }], 250, 'Tomorrow, 6-8 PM', 3, 'card'),
   ],
   coupons: [
-    { code: 'FRESH10', type: 'percent', value: 10, cap: 50, minOrder: 0, expiry: '2026-12-31', active: true, used: 42, desc: '10% off, up to ₹50' },
-    { code: 'FARMER50', type: 'flat', value: 50, cap: 50, minOrder: 499, expiry: '2026-12-31', active: true, used: 18, desc: '₹50 off over ₹499' },
+    { id: 1, code: 'FRESH10', type: 'percent', value: 10, cap: 50, minOrder: 0, expiry: '2026-12-31', active: true, used: 42, desc: '10% off, up to ₹50' },
+    { id: 2, code: 'FARMER50', type: 'flat', value: 50, cap: 50, minOrder: 499, expiry: '2026-12-31', active: true, used: 18, desc: '₹50 off over ₹499' },
   ],
   areas: ['Gachibowli', 'Madhapur', 'Kondapur', 'Banjara Hills', 'Jubilee Hills', 'Kukatpally', 'Manikonda', 'Begumpet'],
   slots: ['Today, 6-8 PM', 'Tomorrow, 7-9 AM', 'Tomorrow, 6-8 PM', 'Sat, 7-9 AM'],
@@ -147,14 +147,23 @@ export const MODULE_LIST = [
 let state = load();
 const listeners = new Set();
 
+// Merge persisted data over a fresh seed. Deep-merges the OBJECT slices
+// (settings, payments) so a returning user who saved before a new field
+// existed still gets that field's default (prevents undefined -> NaN bills).
+function mergeSeed(parsed) {
+  const sd = seed();
+  return {
+    ...sd,
+    ...parsed,
+    settings: { ...sd.settings, ...(parsed && parsed.settings) },
+    payments: { ...sd.payments, ...(parsed && parsed.payments) },
+  };
+}
+
 function load() {
   const raw = readSync(); // web only; native returns null and hydrates below
   if (raw) {
-    try {
-      const parsed = JSON.parse(raw);
-      // shallow-merge missing top-level keys from a fresh seed (forward-compat)
-      return { ...seed(), ...parsed };
-    } catch { /* fall through to seed */ }
+    try { return mergeSeed(JSON.parse(raw)); } catch { /* fall through to seed */ }
   }
   const s = seed();
   if (isWeb) persist(JSON.stringify(s)); // native persists after hydration check
@@ -166,7 +175,7 @@ function load() {
 if (!isWeb) {
   AsyncStorage.getItem(KEY).then((raw) => {
     if (raw) {
-      try { state = { ...seed(), ...JSON.parse(raw) }; listeners.forEach((l) => l()); return; } catch { /* corrupt */ }
+      try { state = mergeSeed(JSON.parse(raw)); listeners.forEach((l) => l()); return; } catch { /* corrupt */ }
     }
     persist(JSON.stringify(state));
   }).catch(() => {});
@@ -201,9 +210,29 @@ export function useStore() {
   useEffect(() => {
     const l = () => force((n) => n + 1);
     listeners.add(l);
+    // Catch any change (e.g. native async hydration) that landed between
+    // this component's first render and this subscription.
+    force((n) => n + 1);
     return () => listeners.delete(l);
   }, []);
   return state;
+}
+
+/* ---------------- customer session persistence ----------------
+   Keeps the logged-in user, cart, wishlist and address across restarts
+   (separate key so it never mixes with the shared admin data).        */
+const SKEY = 'agrowynn_session_v1';
+export function loadSessionSync() {
+  if (!isWeb) return null;
+  try { const r = localStorage.getItem(SKEY); return r ? JSON.parse(r) : null; } catch { return null; }
+}
+export function loadSessionAsync() {
+  return AsyncStorage.getItem(SKEY).then((r) => (r ? JSON.parse(r) : null)).catch(() => null);
+}
+export function saveSession(obj) {
+  const str = JSON.stringify(obj);
+  if (isWeb) { try { localStorage.setItem(SKEY, str); } catch { /* quota */ } }
+  else { AsyncStorage.setItem(SKEY, str).catch(() => {}); }
 }
 
 /* ---------------- helpers shared across modules ---------------- */
@@ -216,6 +245,16 @@ function stamp() {
 }
 export function nextId(arr) {
   return arr.reduce((m, x) => Math.max(m, typeof x.id === 'number' ? x.id : 0), 0) + 1;
+}
+/** Unique string id from a base slug, avoiding collisions in `arr` (which can
+ *  happen with length-based suffixes after deletes). */
+export function uniqueId(arr, base) {
+  const ids = new Set(arr.map((x) => x.id));
+  const root = base && base.length ? base : 'item';
+  if (!ids.has(root)) return root;
+  let n = 2;
+  while (ids.has(`${root}-${n}`)) n++;
+  return `${root}-${n}`;
 }
 export const STATUS = ['Confirmed', 'Packed at farm', 'Out for delivery', 'Delivered'];
 export const PAY_LABELS = { upi: 'UPI', card: 'Card', cod: 'Cash on delivery' };

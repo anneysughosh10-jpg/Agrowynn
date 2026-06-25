@@ -16,10 +16,14 @@ export default function Orders({ admin }) {
   const [open, setOpen] = useState(null);
 
   const advance = (o) => {
-    if (o.status >= STATUS.length - 1) return;
-    update('orders', (arr) => arr.map((x) => (x.id === o.id ? { ...x, status: x.status + 1 } : x)));
-    logActivity(admin.name, `Advanced order #${o.id} to "${STATUS[o.status + 1]}"`);
-    setOpen((p) => (p && p.id === o.id ? { ...p, status: p.status + 1 } : p));
+    // Derive the next status from the CURRENT stored record, not the captured
+    // snapshot, so rapid double-taps can't skip or mislabel a step.
+    const cur = orders.find((x) => x.id === o.id) || o;
+    if (cur.status >= STATUS.length - 1 || cur.status === -1) return;
+    const next = cur.status + 1;
+    update('orders', (arr) => arr.map((x) => (x.id === o.id ? { ...x, status: next } : x)));
+    logActivity(admin.name, `Advanced order #${o.id} to "${STATUS[next]}"`);
+    setOpen((p) => (p && p.id === o.id ? { ...p, status: next } : p));
   };
 
   const cancel = (o) => confirm(`Cancel order #${o.id} and mark for refund?`, () => {

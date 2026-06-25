@@ -30,11 +30,13 @@ export default function Admins({ admin }) {
   const save = () => {
     const username = form.username.trim().toLowerCase();
     if (!form.name.trim() || !username || !form.password) return;
-    // unique username check
-    const clash = admins.find((a) => a.username.toLowerCase() === username && (editing === 'new' || a.id !== editing.id));
+    if (!form.modules.length) return; // must grant at least one module
+    // unique username check (guard against any record missing a username)
+    const clash = admins.find((a) => a.username && a.username.toLowerCase() === username && (editing === 'new' || a.id !== editing.id));
     if (clash) { return; } // silently ignore dup; UI hint below covers it
     const clean = { name: form.name.trim(), username, password: form.password, modules: form.modules, active: form.active };
     if (editing === 'new') {
+      if (adminCount >= MAX_ADMINS - 1) return; // enforce the cap in logic, not just by hiding the button
       const id = nextId(admins);
       update('admins', (arr) => [...arr, { ...clean, id, role: 'admin' }]);
       logActivity(admin.name, `Created admin "${clean.name}" (${username})`);
@@ -45,12 +47,16 @@ export default function Admins({ admin }) {
     setEditing(null);
   };
 
-  const del = (a) => confirm(`Delete admin "${a.name}"? They will no longer be able to log in.`, () => {
-    update('admins', (arr) => arr.filter((x) => x.id !== a.id));
-    logActivity(admin.name, `Deleted admin "${a.name}"`);
-  });
+  const del = (a) => {
+    if (a.role === 'super') return; // never delete the super admin (defense beyond hidden UI)
+    confirm(`Delete admin "${a.name}"? They will no longer be able to log in.`, () => {
+      update('admins', (arr) => arr.filter((x) => x.id !== a.id));
+      logActivity(admin.name, `Deleted admin "${a.name}"`);
+    });
+  };
 
   const toggleActive = (a) => {
+    if (a.role === 'super') return; // never deactivate the super admin
     update('admins', (arr) => arr.map((x) => (x.id === a.id ? { ...x, active: !x.active } : x)));
     logActivity(admin.name, `${a.active ? 'Deactivated' : 'Activated'} admin "${a.name}"`);
   };
@@ -114,6 +120,7 @@ export default function Admins({ admin }) {
         <Text style={{ color: A.muted, fontSize: 11.5, marginBottom: 8 }}>
           Pick which sections this admin can open. They won't see the rest.
         </Text>
+        {form.modules.length === 0 ? <Text style={{ color: A.rose, fontSize: 11.5, marginBottom: 8 }}>Grant at least one module to save.</Text> : null}
       </FormModal>
       {confirmNode}
     </Screen>

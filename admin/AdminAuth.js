@@ -20,7 +20,7 @@ export default function AdminAuth({ onSuccess, onExit }) {
   const submit = () => {
     const u = username.trim().toLowerCase();
     const admins = getState().admins;
-    const match = admins.find((a) => a.username.toLowerCase() === u && a.password === password);
+    const match = admins.find((a) => a.username && a.username.toLowerCase() === u && a.password === password);
     if (!match) { setError('Invalid username or password.'); return; }
     if (!match.active) { setError('This admin account is deactivated.'); return; }
     logActivity(match.name, 'Logged in to admin panel');

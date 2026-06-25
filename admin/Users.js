@@ -58,7 +58,7 @@ export default function Users({ admin }) {
           <Card key={u.id}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <View style={{ width: 44, height: 44, borderRadius: 999, backgroundColor: A.cardAlt, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ color: A.mint, fontWeight: '800', fontSize: 17 }}>{u.name[0]}</Text>
+                <Text style={{ color: A.mint, fontWeight: '800', fontSize: 17 }}>{(u.name || '?')[0]}</Text>
               </View>
               <View style={{ flex: 1, marginLeft: 12 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>

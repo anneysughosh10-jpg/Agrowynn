@@ -17,15 +17,19 @@ export default function Reports() {
   const cancelled = orders.filter((o) => o.status === -1).length;
   const avg = live.length ? Math.round(revenue / live.length) : 0;
 
-  // units sold per product
+  // units sold per product (key by current product name, joined via stable id)
   const unitMap = {};
-  live.forEach((o) => o.lines.forEach((l) => { unitMap[l.name] = (unitMap[l.name] || 0) + l.q; }));
+  live.forEach((o) => o.lines.forEach((l) => {
+    const prod = products.find((p) => p.id === l.id);
+    const label = prod ? prod.name : l.name; // current name if product still exists
+    unitMap[label] = (unitMap[label] || 0) + l.q;
+  }));
   const topProducts = Object.entries(unitMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
-  // revenue per category
+  // revenue per category — join by product id so renames don't fall into "other"
   const catMap = {};
   live.forEach((o) => o.lines.forEach((l) => {
-    const prod = products.find((p) => p.name === l.name);
+    const prod = products.find((p) => p.id === l.id);
     const cat = prod ? prod.cat : 'other';
     catMap[cat] = (catMap[cat] || 0) + l.price * l.q;
   }));

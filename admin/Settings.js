@@ -25,8 +25,9 @@ export default function Settings({ admin }) {
   };
 
   const toggleMaint = () => {
-    setState((s) => ({ ...s, settings: { ...s.settings, maintenance: !s.settings.maintenance } }));
-    logActivity(admin.name, `Maintenance mode ${settings.maintenance ? 'OFF' : 'ON'}`);
+    let now;
+    setState((s) => { now = !s.settings.maintenance; return { ...s, settings: { ...s.settings, maintenance: now } }; });
+    logActivity(admin.name, `Maintenance mode ${now ? 'ON' : 'OFF'}`);
   };
 
   const doReset = () => confirm('Reset ALL data back to the original demo seed? This wipes every edit.', () => {

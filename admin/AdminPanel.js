@@ -74,7 +74,7 @@ function Dashboard({ store, allowed, onOpen, admin }) {
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
-      <Text style={st.hi}>Welcome back, {admin.name.split(' ')[0]} 👋</Text>
+      <Text style={st.hi}>Welcome back, {(admin.name || 'Admin').split(' ')[0]} 👋</Text>
       <Text style={st.hiSub}>Here's how Agrowynn is doing today.</Text>
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 16, marginBottom: 8 }}>

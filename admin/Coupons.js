@@ -2,10 +2,10 @@
    Admin module — Coupons & Promotions
    Create/edit/delete coupons, enable/disable, edit the homepage banner.
    ===================================================================== */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { A, AIcon, Screen, Btn, IconBtn, Card, Tag, Empty, Input, ChipRow, Toggle, FormModal, useConfirm } from './ui';
-import { useStore, update, setState, logActivity } from '../data/store';
+import { useStore, update, setState, logActivity, nextId } from '../data/store';
 
 const blank = { code: '', type: 'percent', value: '', cap: '', minOrder: '', expiry: '2026-12-31', active: true };
 
@@ -15,7 +15,10 @@ export default function Coupons({ admin }) {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(blank);
   const [banner, setBanner] = useState({ title: settings.bannerTitle, sub: settings.bannerSub });
+  // Re-sync the banner editor if the stored banner changes elsewhere.
+  useEffect(() => { setBanner({ title: settings.bannerTitle, sub: settings.bannerSub }); }, [settings.bannerTitle, settings.bannerSub]);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const codeClash = (code, selfId) => coupons.some((c) => c.code.toUpperCase() === code && c.id !== selfId);
 
   const openNew = () => { setForm(blank); setEditing('new'); };
   const openEdit = (c) => { setForm({ ...c, value: String(c.value), cap: String(c.cap), minOrder: String(c.minOrder) }); setEditing(c); };
@@ -27,6 +30,8 @@ export default function Coupons({ admin }) {
   const save = () => {
     const code = form.code.trim().toUpperCase();
     if (!code) return;
+    const selfId = editing === 'new' ? null : editing.id;
+    if (codeClash(code, selfId)) return; // duplicate code; UI hint below covers it
     const clean = {
       code, type: form.type,
       value: Number(form.value) || 0, cap: Number(form.cap) || 0,
@@ -34,21 +39,22 @@ export default function Coupons({ admin }) {
     };
     clean.desc = describe(clean);
     if (editing === 'new') {
-      update('coupons', (arr) => [{ ...clean, used: 0 }, ...arr]);
+      const id = nextId(coupons);
+      update('coupons', (arr) => [{ ...clean, id, used: 0 }, ...arr]);
       logActivity(admin.name, `Created coupon ${code}`);
     } else {
-      update('coupons', (arr) => arr.map((x) => (x.code === editing.code ? { ...x, ...clean } : x)));
+      update('coupons', (arr) => arr.map((x) => (x.id === editing.id ? { ...x, ...clean } : x)));
       logActivity(admin.name, `Edited coupon ${code}`);
     }
     setEditing(null);
   };
 
   const del = (c) => confirm(`Delete coupon ${c.code}?`, () => {
-    update('coupons', (arr) => arr.filter((x) => x.code !== c.code));
+    update('coupons', (arr) => arr.filter((x) => x.id !== c.id));
     logActivity(admin.name, `Deleted coupon ${c.code}`);
   });
 
-  const toggle = (c) => update('coupons', (arr) => arr.map((x) => (x.code === c.code ? { ...x, active: !x.active } : x)));
+  const toggle = (c) => update('coupons', (arr) => arr.map((x) => (x.id === c.id ? { ...x, active: !x.active } : x)));
 
   const saveBanner = () => {
     setState((s) => ({ ...s, settings: { ...s.settings, bannerTitle: banner.title, bannerSub: banner.sub } }));
@@ -65,7 +71,7 @@ export default function Coupons({ admin }) {
       </Card>
 
       {coupons.length === 0 ? <Empty icon="tag" text="No coupons" /> : coupons.map((c) => (
-        <Card key={c.code}>
+        <Card key={c.id}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -86,6 +92,7 @@ export default function Coupons({ admin }) {
 
       <FormModal visible={!!editing} title={editing === 'new' ? 'Add coupon' : 'Edit coupon'} onClose={() => setEditing(null)} onSave={save}>
         <Input label="Code" value={form.code} onChangeText={(t) => set('code', t.toUpperCase())} placeholder="FRESH10" />
+        {form.code.trim() && codeClash(form.code.trim().toUpperCase(), editing === 'new' ? null : editing.id) ? <Text style={{ color: A.rose, fontSize: 11.5, marginTop: -8, marginBottom: 10 }}>That coupon code already exists.</Text> : null}
         <Text style={{ color: A.sub, fontSize: 12.5, fontWeight: '700', marginBottom: 6 }}>Type</Text>
         <ChipRow options={[{ value: 'percent', label: '% Percent off' }, { value: 'flat', label: '₹ Flat off' }]} value={form.type} onChange={(v) => set('type', v)} />
         <View style={{ flexDirection: 'row', gap: 10 }}>

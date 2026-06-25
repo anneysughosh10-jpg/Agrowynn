@@ -5,7 +5,7 @@
 import React, { useState } from 'react';
 import { View, Text, Image, Pressable } from 'react-native';
 import { A, AIcon, Screen, Btn, IconBtn, Card, Tag, Empty, Input, Toggle, FormModal, useConfirm, ImageUpload } from './ui';
-import { useStore, update, logActivity } from '../data/store';
+import { useStore, update, logActivity, uniqueId } from '../data/store';
 
 const blank = { name: '', village: '', phone: '', photo: '', farmPhoto: '', verified: false };
 
@@ -23,10 +23,15 @@ export default function Farmers({ admin }) {
     if (!form.name.trim()) return;
     const clean = { ...form, name: form.name.trim(), photo: form.photo || null, farmPhoto: form.farmPhoto || null };
     if (editing === 'new') {
-      const id = clean.name.toLowerCase().replace(/\s+/g, '-') + '-' + (farmers.length + 1);
+      const id = uniqueId(farmers, clean.name.toLowerCase().replace(/\s+/g, '-'));
       update('farmers', (arr) => [...arr, { ...clean, id }]);
       logActivity(admin.name, `Added farmer "${clean.name}"`);
     } else {
+      // Products reference a farmer by NAME, so a rename must cascade to them
+      // (and update their village) or every linked product would be orphaned.
+      if (editing.name !== clean.name || editing.village !== clean.village) {
+        update('products', (arr) => arr.map((p) => (p.farmer === editing.name ? { ...p, farmer: clean.name, village: clean.village } : p)));
+      }
       update('farmers', (arr) => arr.map((x) => (x.id === editing.id ? { ...x, ...clean } : x)));
       logActivity(admin.name, `Edited farmer "${clean.name}"`);
     }
@@ -48,7 +53,7 @@ export default function Farmers({ admin }) {
           <Card key={f.id}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <View style={{ width: 48, height: 48, borderRadius: 999, backgroundColor: A.cardAlt, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                {f.photo ? <Image source={{ uri: f.photo }} style={{ width: 48, height: 48 }} /> : <Text style={{ color: A.mint, fontWeight: '800', fontSize: 18 }}>{f.name[0]}</Text>}
+                {f.photo ? <Image source={{ uri: f.photo }} style={{ width: 48, height: 48 }} /> : <Text style={{ color: A.mint, fontWeight: '800', fontSize: 18 }}>{(f.name || '?')[0]}</Text>}
               </View>
               {f.farmPhoto ? <Image source={{ uri: f.farmPhoto }} style={{ width: 48, height: 48, borderRadius: 10, marginLeft: 8 }} /> : null}
               <View style={{ flex: 1, marginLeft: 12 }}>

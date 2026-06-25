@@ -17,17 +17,19 @@ export default function Delivery({ admin }) {
   const [thr, setThr] = useState(String(settings.freeDeliveryThreshold));
 
   const addArea = () => {
-    if (!newArea.trim()) return;
-    update('areas', (a) => [...a, newArea.trim()]);
-    logActivity(admin.name, `Added delivery area "${newArea.trim()}"`);
+    const v = newArea.trim();
+    if (!v || areas.includes(v)) { setNewArea(''); return; } // no blanks/duplicates (dupes break list keys)
+    update('areas', (a) => [...a, v]);
+    logActivity(admin.name, `Added delivery area "${v}"`);
     setNewArea('');
   };
   const delArea = (a) => confirm(`Remove area "${a}"?`, () => update('areas', (arr) => arr.filter((x) => x !== a)));
 
   const addSlot = () => {
-    if (!newSlot.trim()) return;
-    update('slots', (a) => [...a, newSlot.trim()]);
-    logActivity(admin.name, `Added slot "${newSlot.trim()}"`);
+    const v = newSlot.trim();
+    if (!v || slots.includes(v)) { setNewSlot(''); return; } // no blanks/duplicates
+    update('slots', (a) => [...a, v]);
+    logActivity(admin.name, `Added slot "${v}"`);
     setNewSlot('');
   };
   const delSlot = (s) => confirm(`Remove slot "${s}"?`, () => update('slots', (arr) => arr.filter((x) => x !== s)));
