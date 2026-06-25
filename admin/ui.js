@@ -169,7 +169,7 @@ export function ImageUpload({ label, value, onChange, round }) {
       const file = e.target.files && e.target.files[0];
       if (!file) return;
       setBusy(true);
-      try { onChange(await fileToResizedDataURL(file, 900, 0.72)); }
+      try { onChange(await fileToResizedDataURL(file, 800, 0.6)); }
       catch { /* ignore unreadable file */ }
       setBusy(false);
     };
@@ -189,8 +189,8 @@ export function ImageUpload({ label, value, onChange, round }) {
       setBusy(true);
       const manip = await ImageManipulator.manipulateAsync(
         res.assets[0].uri,
-        [{ resize: { width: 900 } }],
-        { compress: 0.65, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+        [{ resize: { width: 800 } }],
+        { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true },
       );
       onChange(manip.base64 ? `data:image/jpeg;base64,${manip.base64}` : res.assets[0].uri);
     } catch { setNote('Could not open the photo library.'); }

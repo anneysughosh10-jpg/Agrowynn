@@ -30,11 +30,12 @@ export default function Products({ admin }) {
 
   const save = () => {
     if (!form.name.trim()) return;
+    const price = Number(form.price) || 0;
     const clean = {
       ...form,
       name: form.name.trim(),
-      price: Number(form.price) || 0,
-      mrp: Number(form.mrp) || Number(form.price) || 0,
+      price,
+      mrp: Math.max(Number(form.mrp) || price, price), // MRP can't be below the selling price
       image: form.image || null,
       tag: form.tag || null,
     };

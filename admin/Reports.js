@@ -35,7 +35,7 @@ export default function Reports() {
   }));
   const catRows = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
   const catTotal = catRows.reduce((a, b) => a + b[1], 0) || 1;
-  const catName = (id) => (categories.find((c) => c.id === id) || {}).name || id;
+  const catName = (id) => (id === 'other' ? 'Removed products' : ((categories.find((c) => c.id === id) || {}).name || id));
 
   return (
     <Screen title="Reports" subtitle="Live analytics from current data">

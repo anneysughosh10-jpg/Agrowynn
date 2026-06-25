@@ -22,9 +22,21 @@ function readSync() {
   if (!isWeb) return null;
   try { return localStorage.getItem(KEY); } catch { return null; }
 }
+let persistWarned = false;
 function persist(str) {
-  if (isWeb) { try { localStorage.setItem(KEY, str); } catch { /* quota / private mode */ } }
-  else { AsyncStorage.setItem(KEY, str).catch(() => {}); }
+  if (isWeb) {
+    try { localStorage.setItem(KEY, str); }
+    catch (e) {
+      // Surface quota failures once instead of silently losing data (e.g. too
+      // many large photos). In-memory state still works for this session.
+      if (!persistWarned && typeof window !== 'undefined' && window.alert) {
+        persistWarned = true;
+        window.alert('Storage is full — recent changes (such as large photos) may not be saved after a refresh. Please use smaller images or remove some.');
+      }
+    }
+  } else {
+    AsyncStorage.setItem(KEY, str).catch(() => {});
+  }
 }
 
 /* ---------------- seed data ---------------- */

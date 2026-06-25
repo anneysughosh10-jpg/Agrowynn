@@ -19,6 +19,62 @@ const C = {
   badge: '#E7EEDF', amberbg: '#FBEFD9', rose: '#C75D5D', white: '#FFFFFF',
 };
 const Icon = (p) => <Feather {...p} />;
+const cardW = (W - 16 * 2 - 12) / 2;
+
+/* ---- reusable presentational components (module scope so they keep a
+   stable identity and don't remount on every App render) ---- */
+const Pill = ({ t, bg, col }) => (
+  <View style={{ backgroundColor: bg || C.badge, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 }}>
+    <Text style={{ color: col || C.forest, fontSize: 10.5, fontWeight: '700' }}>{t}</Text>
+  </View>
+);
+const Btn = ({ label, onPress, icon, style, textStyle, ghost }) => (
+  <Pressable onPress={onPress} style={[s.btn, ghost && s.btnGhost, style]}>
+    {icon ? <Icon name={icon} size={18} color={ghost ? C.forest : '#fff'} /> : null}
+    <Text style={[s.btnTxt, ghost && { color: C.forest }, textStyle]}>{label}</Text>
+  </Pressable>
+);
+const Row = ({ l, v, col }) => (
+  <View style={[s.rowBetween, { marginBottom: 5 }]}>
+    <Text style={{ fontSize: 13, color: C.muted }}>{l}</Text>
+    <Text style={{ fontSize: 13, color: col || C.ink, fontWeight: col ? '700' : '400' }}>{v}</Text>
+  </View>
+);
+const Card = ({ p, wide, cart, wish, add, dec, toggleWish, setSel, setModal }) => (
+  <View style={[s.card, { width: wide ? 168 : cardW }]}>
+    <Pressable onPress={() => { setSel(p); setModal('product'); }} style={s.cardImg}>
+      {p.image ? <Image source={{ uri: p.image }} style={{ width: '100%', height: '100%', position: 'absolute' }} /> : <Text style={{ fontSize: 50 }}>{p.emoji}</Text>}
+      {p.tag ? <View style={{ position: 'absolute', top: 8, left: 8 }}><Pill t={p.tag} bg={p.tag === 'Bestseller' ? C.amberbg : C.badge} col={p.tag === 'Bestseller' ? C.harvest : C.forest} /></View> : null}
+      {p.inStock === false ? <View style={{ position: 'absolute', bottom: 8, left: 8 }}><Pill t="Out of stock" bg="#F3D9D9" col={C.rose} /></View> : null}
+      <Pressable onPress={() => toggleWish(p.id)} style={s.heart}>
+        <Icon name="heart" size={16} color={wish.includes(p.id) ? C.rose : C.muted} />
+      </Pressable>
+    </Pressable>
+    <View style={{ padding: 11 }}>
+      <Text style={{ fontWeight: '700', color: C.ink, fontSize: 14 }}>{p.name}</Text>
+      <Text style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>🌱 {p.farmer || '—'} · {p.village || ''}</Text>
+      <View style={s.rowBetween}>
+        <View>
+          <Text style={{ color: C.forest, fontSize: 15, fontWeight: '800' }}>
+            ₹{p.price}{p.mrp > p.price ? <Text style={{ fontSize: 11, color: C.muted, fontWeight: '400', textDecorationLine: 'line-through' }}>  ₹{p.mrp}</Text> : null}
+          </Text>
+          <Text style={{ fontSize: 10.5, color: C.muted }}>{p.unit}</Text>
+        </View>
+        {p.inStock === false ? (
+          <View style={[s.addBtn, { borderColor: C.line }]}><Text style={{ color: C.muted, fontWeight: '700', fontSize: 12.5 }}>SOLD OUT</Text></View>
+        ) : cart[p.id] ? (
+          <View style={s.stepper}>
+            <Pressable onPress={() => dec(p.id)}><Icon name="minus" size={14} color="#fff" /></Pressable>
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13, marginHorizontal: 8 }}>{cart[p.id]}</Text>
+            <Pressable onPress={() => add(p.id)}><Icon name="plus" size={14} color="#fff" /></Pressable>
+          </View>
+        ) : (
+          <Pressable onPress={() => add(p.id)} style={s.addBtn}><Text style={{ color: C.forest, fontWeight: '700', fontSize: 12.5 }}>ADD</Text></Pressable>
+        )}
+      </View>
+    </View>
+  </View>
+);
 
 /* ---------------- data ----------------
    Products / categories / coupons / areas / slots / settings now all
@@ -35,7 +91,8 @@ export default function App() {
   const AREAS = db.areas;
   const SLOTS = db.slots;
   const settings = db.settings;
-  const activeCoupons = db.coupons.filter((c) => c.active);
+  const today = new Date().toISOString().slice(0, 10);
+  const activeCoupons = db.coupons.filter((c) => c.active && (!c.expiry || c.expiry >= today)); // don't offer expired coupons
   const enabledPays = PAYS.filter((p) => db.payments[p[0]]);
 
   const initialSession = loadSessionSync(); // web: restore now; native: null (async restore below)
@@ -158,67 +215,23 @@ export default function App() {
       const id = 'AGW' + Math.floor(100000 + Math.random() * 900000);
       // Single source of truth: the order lives in the store so the admin
       // panel AND the customer's "My orders" both read the same record.
+      const pay = enabledPays.some((p) => p[0] === payMethod) ? payMethod : (enabledPays[0] ? enabledPays[0][0] : payMethod);
       const storeOrder = {
         id, userId: myUserId,
         userName: user && user.name ? user.name : 'Guest',
         lines: lines.map((l) => ({ id: l.id, name: l.name, emoji: l.emoji, farmer: l.farmer, village: l.village, price: l.price, q: l.q })),
-        payable, slot, status: 0, pay: payMethod, date: 'today',
+        payable, slot, status: 0, pay, date: 'today',
       };
       update('orders', (arr) => [storeOrder, ...arr]);
+      // Count the coupon redemption (so admin usage stats are accurate).
+      if (couponObj && cOff > 0) update('coupons', (arr) => arr.map((c) => (c.id === couponObj.id ? { ...c, used: (c.used || 0) + 1 } : c)));
       setLastOrderId(id);
       setPaying(false); setCart({}); setCoupon(null); setModal('success');
     }, 1600);
   };
 
-  const Btn = ({ label, onPress, icon, style, textStyle, ghost }) => (
-    <Pressable onPress={onPress} style={[s.btn, ghost && s.btnGhost, style]}>
-      {icon ? <Icon name={icon} size={18} color={ghost ? C.forest : '#fff'} /> : null}
-      <Text style={[s.btnTxt, ghost && { color: C.forest }, textStyle]}>{label}</Text>
-    </Pressable>
-  );
-  const Pill = ({ t, bg, col }) => (
-    <View style={{ backgroundColor: bg || C.badge, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 }}>
-      <Text style={{ color: col || C.forest, fontSize: 10.5, fontWeight: '700' }}>{t}</Text>
-    </View>
-  );
-
-  /* ---------- product card ---------- */
-  const cardW = (W - 16 * 2 - 12) / 2;
-  const Card = ({ p, wide }) => (
-    <View style={[s.card, { width: wide ? 168 : cardW }]}>
-      <Pressable onPress={() => { setSel(p); setModal('product'); }} style={s.cardImg}>
-        {p.image ? <Image source={{ uri: p.image }} style={{ width: '100%', height: '100%', position: 'absolute' }} /> : <Text style={{ fontSize: 50 }}>{p.emoji}</Text>}
-        {p.tag ? <View style={{ position: 'absolute', top: 8, left: 8 }}><Pill t={p.tag} bg={p.tag === 'Bestseller' ? C.amberbg : C.badge} col={p.tag === 'Bestseller' ? C.harvest : C.forest} /></View> : null}
-        {p.inStock === false ? <View style={{ position: 'absolute', bottom: 8, left: 8 }}><Pill t="Out of stock" bg="#F3D9D9" col={C.rose} /></View> : null}
-        <Pressable onPress={() => toggleWish(p.id)} style={s.heart}>
-          <Icon name="heart" size={16} color={wish.includes(p.id) ? C.rose : C.muted} />
-        </Pressable>
-      </Pressable>
-      <View style={{ padding: 11 }}>
-        <Text style={{ fontWeight: '700', color: C.ink, fontSize: 14 }}>{p.name}</Text>
-        <Text style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>🌱 {p.farmer} · {p.village}</Text>
-        <View style={s.rowBetween}>
-          <View>
-            <Text style={{ color: C.forest, fontSize: 15, fontWeight: '800' }}>
-              ₹{p.price}{p.mrp > p.price ? <Text style={{ fontSize: 11, color: C.muted, fontWeight: '400', textDecorationLine: 'line-through' }}>  ₹{p.mrp}</Text> : null}
-            </Text>
-            <Text style={{ fontSize: 10.5, color: C.muted }}>{p.unit}</Text>
-          </View>
-          {p.inStock === false ? (
-            <View style={[s.addBtn, { borderColor: C.line }]}><Text style={{ color: C.muted, fontWeight: '700', fontSize: 12.5 }}>SOLD OUT</Text></View>
-          ) : cart[p.id] ? (
-            <View style={s.stepper}>
-              <Pressable onPress={() => dec(p.id)}><Icon name="minus" size={14} color="#fff" /></Pressable>
-              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13, marginHorizontal: 8 }}>{cart[p.id]}</Text>
-              <Pressable onPress={() => add(p.id)}><Icon name="plus" size={14} color="#fff" /></Pressable>
-            </View>
-          ) : (
-            <Pressable onPress={() => add(p.id)} style={s.addBtn}><Text style={{ color: C.forest, fontWeight: '700', fontSize: 12.5 }}>ADD</Text></Pressable>
-          )}
-        </View>
-      </View>
-    </View>
-  );
+  // Props every Card needs (module-scope Card no longer closes over App scope).
+  const cardProps = { cart, wish, add, dec, toggleWish, setSel, setModal };
 
   /* ---------- hidden admin routes ---------- */
   if (screen === 'adminAuth') {
@@ -286,7 +299,7 @@ export default function App() {
               <TextInput value={cred.email} onChangeText={(t) => setCred({ ...cred, email: t })} placeholder="you@email.com" autoCapitalize="none" keyboardType="email-address" placeholderTextColor={C.muted} style={s.input} />
             )}
             <Btn label="Send OTP" onPress={() => ok && setAuthStep('otp')} style={{ marginTop: 16, opacity: ok ? 1 : 0.5 }} />
-            <Btn ghost label="Continue as guest" onPress={() => { setUser({ name: 'Guest' }); setScreen('location'); }} style={{ marginTop: 12 }} />
+            <Btn ghost label="Continue as guest" onPress={() => { setUser({ name: 'Guest', id: 'guest-' + Date.now() }); setScreen('location'); }} style={{ marginTop: 12 }} />
           </>
         ) : (
           <>
@@ -358,11 +371,11 @@ export default function App() {
 
       <Text style={s.section}>This week's harvest</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}>
-        {PRODUCTS.filter((p) => p.tag).map((p) => <Card key={p.id} p={p} wide />)}
+        {PRODUCTS.filter((p) => p.tag).map((p) => <Card key={p.id} p={p} wide {...cardProps} />)}
       </ScrollView>
 
       <Text style={s.section}>Bestsellers</Text>
-      <View style={s.grid}>{PRODUCTS.filter((p) => p.rating >= 4.7).map((p) => <Card key={p.id} p={p} />)}</View>
+      <View style={s.grid}>{PRODUCTS.filter((p) => p.rating >= 4.7).map((p) => <Card key={p.id} p={p} {...cardProps} />)}</View>
     </ScrollView>
   );
 
@@ -382,7 +395,7 @@ export default function App() {
           <Text style={{ color: C.muted, fontSize: 12.5, marginTop: 10 }}>{list.length} items · all certified organic</Text>
         </View>
         <ScrollView contentContainerStyle={{ paddingBottom: 90 }}>
-          <View style={s.grid}>{list.map((p) => <Card key={p.id} p={p} />)}</View>
+          <View style={s.grid}>{list.map((p) => <Card key={p.id} p={p} {...cardProps} />)}</View>
         </ScrollView>
       </View>
     );
@@ -460,6 +473,10 @@ export default function App() {
             <View style={[s.btn, { backgroundColor: C.muted }]}>
               <Text style={s.btnTxt}>Remove out-of-stock items to checkout</Text>
             </View>
+          ) : (SLOTS.length === 0 || enabledPays.length === 0) ? (
+            <View style={[s.btn, { backgroundColor: C.muted }]}>
+              <Text style={s.btnTxt}>Checkout unavailable right now</Text>
+            </View>
           ) : (
             <Btn label={'Proceed to checkout · ₹' + Math.round(payable)} onPress={() => setModal('checkout')} />
           )}
@@ -517,7 +534,7 @@ export default function App() {
         <View style={s.pGroup}>
           <PRow icon="credit-card" label="Payment methods" onPress={() => { }} />
           <PRow icon="phone" label="Help & support" onPress={() => { }} />
-          <PRow icon="log-out" label="Log out" danger onPress={() => { setScreen('splash'); setAuthStep('enter'); setUser(null); setCart({}); setWish([]); setCoupon(null); setSelOrder(null); setLastOrderId(null); setCred({ phone: '', email: '' }); setOtp(''); setTab('home'); setModal(null); }} />
+          <PRow icon="log-out" label="Log out" danger onPress={() => { setScreen('splash'); setAuthStep('enter'); setAuthMode('phone'); setUser(null); setCart({}); setWish([]); setCoupon(null); setSelOrder(null); setLastOrderId(null); setSel(null); setQuery(''); setCred({ phone: '', email: '' }); setOtp(''); setTab('home'); setModal(null); }} />
         </View>
         <View style={{ alignItems: 'center', marginVertical: 20 }}>
           <Image source={LOGO} style={{ width: 60, height: 60, resizeMode: 'contain' }} />
@@ -525,13 +542,6 @@ export default function App() {
       </ScrollView>
     );
   };
-
-  const Row = ({ l, v, col }) => (
-    <View style={[s.rowBetween, { marginBottom: 5 }]}>
-      <Text style={{ fontSize: 13, color: C.muted }}>{l}</Text>
-      <Text style={{ fontSize: 13, color: col || C.ink, fontWeight: col ? '700' : '400' }}>{v}</Text>
-    </View>
-  );
 
   /* ---------- modals ---------- */
   const ProductModal = () => {
@@ -643,7 +653,7 @@ export default function App() {
               <Row l="Paid" v={'₹' + Math.round(o.payable)} col={C.forest} />
             </View>
           ) : null}
-          <Btn label="Track order" onPress={() => { setSelOrder(o); setModal('orderDetail'); }} style={{ marginTop: 20, width: '100%' }} />
+          {o ? <Btn label="Track order" onPress={() => { setSelOrder(o); setModal('orderDetail'); }} style={{ marginTop: 20, width: '100%' }} /> : null}
           <Pressable onPress={() => { setModal(null); setTab('home'); }} style={{ marginTop: 12 }}><Text style={{ color: C.muted, fontWeight: '600' }}>Back to home</Text></Pressable>
         </SafeAreaView>
       </Modal>
@@ -771,7 +781,7 @@ export default function App() {
               </View>
             </View>
             <ScrollView contentContainerStyle={{ paddingBottom: 30 }} keyboardShouldPersistTaps="handled">
-              <View style={s.grid}>{searchRes.map((p) => <Card key={p.id} p={p} />)}</View>
+              <View style={s.grid}>{searchRes.map((p) => <Card key={p.id} p={p} {...cardProps} />)}</View>
               {query && searchRes.length === 0 ? <Text style={{ color: C.muted, textAlign: 'center', marginTop: 30 }}>No matches for "{query}".</Text> : null}
             </ScrollView>
           </SafeAreaView>
